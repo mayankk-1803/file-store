@@ -279,14 +279,14 @@ const UploadDocument = () => {
           <button
             type="button"
             onClick={() => window.history.back()}
-            className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            className="px-6 py-3 border bg-purple-500 text-gray-700 rounded-lg hover:bg-purple-600 transition-colors"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={uploading || files.length === 0}
-            className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-primary bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {uploading ? (
               <div className="flex items-center">

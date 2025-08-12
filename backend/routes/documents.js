@@ -1,4 +1,3 @@
-// routes/documentRoutes.js
 import express from 'express';
 import multer from 'multer';
 import { body } from 'express-validator';
@@ -14,13 +13,13 @@ import {
   shareDocument,
   getSharedDocuments,
   revokeShare,
-  downloadSharedDocument
+  downloadSharedDocument,
+  viewSharedDocument   // <-- import the new controller here
 } from '../controllers/documentController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Use multer memory storage for buffer upload
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
@@ -43,7 +42,6 @@ const upload = multer({
   fileFilter
 });
 
-// Validation rules
 const documentValidation = [
   body('category').isIn(['education', 'healthcare', 'government', 'finance', 'transport', 'other'])
     .withMessage('Invalid category'),
@@ -61,7 +59,6 @@ const shareValidation = [
 // All routes require authentication
 router.use(authenticateToken);
 
-// Routes
 router.post('/upload', upload.single('file'), documentValidation, uploadDocument);
 router.get('/', getDocuments);
 router.get('/dashboard', getDashboardStats);
@@ -74,5 +71,6 @@ router.delete('/:id', deleteDocument);
 router.post('/share', shareValidation, shareDocument);
 router.delete('/share/:shareId', revokeShare);
 router.get('/shared/:shareToken/download', downloadSharedDocument);
+router.get('/shared/:shareToken/view', viewSharedDocument);  // <-- new route for inline view
 
 export default router;

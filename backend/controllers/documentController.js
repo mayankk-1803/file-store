@@ -1,4 +1,3 @@
-// controllers/documentController.js
 import Document from '../models/Document.js';
 import Share from '../models/Share.js';
 import User from '../models/User.js';
@@ -25,7 +24,7 @@ export const uploadDocument = async (req, res) => {
       title: title || req.file.originalname,
       description,
       category: category.toLowerCase(),
-      data: req.file.buffer,          // Store file buffer here
+      data: req.file.buffer,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       size: req.file.size,
@@ -79,7 +78,7 @@ export const getDocuments = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
-      .select('-data');  // exclude file buffer from list
+      .select('-data');  // exclude file buffer
 
     const total = await Document.countDocuments(query);
 
@@ -458,6 +457,57 @@ export const downloadSharedDocument = async (req, res) => {
     console.error('Download shared document error:', error);
     res.status(500).json({
       message: 'Error downloading shared document',
+      error: error.message
+    });
+  }
+};
+
+// New controller to view shared document inline
+export const viewSharedDocument = async (req, res) => {
+  try {
+    const { shareToken } = req.params;
+
+    const share = await Share.findOne({
+      shareToken,
+      isActive: true,
+      $or: [
+        { expiresAt: { $gt: new Date() } },
+        { expiresAt: null }
+      ]
+    }).populate('document');
+
+    if (!share) {
+      return res.status(404).json({ message: 'Shared document not found or expired' });
+    }
+
+    // Check if permission allows viewing (either 'view' or 'download')
+    if (!['view', 'download'].includes(share.permissions)) {
+      return res.status(403).json({ message: 'View permission not granted' });
+    }
+
+    const document = share.document;
+
+    if (!document.data || !document.mimeType) {
+      return res.status(404).json({ message: 'Document data not found' });
+    }
+
+    // Update access info
+    share.accessCount = (share.accessCount || 0) + 1;
+    share.lastAccessed = new Date();
+    await share.save();
+
+    res.set({
+      'Content-Type': document.mimeType,
+      'Content-Disposition': `inline; filename="${document.originalName}"`,
+      'Content-Length': document.size
+    });
+
+    return res.send(document.data);
+
+  } catch (error) {
+    console.error('View shared document error:', error);
+    res.status(500).json({
+      message: 'Error viewing shared document',
       error: error.message
     });
   }
