@@ -1,8 +1,6 @@
 import express from 'express';
 import multer from 'multer';
 import { body } from 'express-validator';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import {
   uploadDocument,
   getDocuments,
@@ -19,29 +17,18 @@ import {
 } from '../controllers/documentController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
 const router = express.Router();
 
-// Configure multer for file upload
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../uploads'));
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
-  }
-});
+// Use memory storage so files are kept in buffer (not saved on disk)
+const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /pdf|doc|docx|jpg|jpeg|png|gif/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const extname = allowedTypes.test(file.originalname.toLowerCase());
   const mimetype = allowedTypes.test(file.mimetype);
 
   if (mimetype && extname) {
-    return cb(null, true);
+    cb(null, true);
   } else {
     cb(new Error('Only PDF, Word documents, and images are allowed'));
   }
@@ -70,7 +57,7 @@ const shareValidation = [
   body('expiresIn').optional().isInt({ min: 1, max: 365 })
 ];
 
-// Apply authentication to all routes
+// Apply authentication middleware to all routes
 router.use(authenticateToken);
 
 // Routes
