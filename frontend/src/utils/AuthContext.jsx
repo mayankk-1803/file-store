@@ -5,6 +5,8 @@ const AuthContext = createContext();
 const BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 axios.defaults.baseURL = BASE_URL;
 
+console.log('API base URL:', axios.defaults.baseURL);
+
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
