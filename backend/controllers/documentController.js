@@ -497,11 +497,10 @@ export const viewSharedDocument = async (req, res) => {
     await share.save();
 
     res.set({
-      'Content-Type': document.mimeType,
-      'Content-Disposition': `inline; filename="${document.originalName}"`,
-      'Content-Length': document.size
-    });
-
+  'Content-Type': 'application/pdf',
+  'Content-Disposition': `attachment; filename="${document.originalName}"`,
+  'Content-Length': document.size
+});
     return res.send(document.data);
 
   } catch (error) {
