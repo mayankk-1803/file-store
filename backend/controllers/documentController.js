@@ -122,37 +122,59 @@ export const getDocument = async (req, res) => {
   }
 };
 
+// export const downloadDocument = async (req, res) => {
+//   try {
+//     const document = await Document.findOne({
+//       _id: req.params.id,
+//       owner: req.user.userId
+//     });
+
+//     if (!document) {
+//       return res.status(404).json({ message: 'Document not found' });
+//     }
+
+//     if (!document.data || !document.mimeType) {
+//       return res.status(404).json({ message: 'Document data not found' });
+//     }
+
+//     res.set({
+//       'Content-Type': document.mimeType,
+//       'Content-Disposition': `attachment; filename="${document.originalName}"`,
+//       'Content-Length': document.size
+//     });
+
+//     return res.send(document.data);
+
+//   } catch (error) {
+//     console.error('Download error:', error);
+//     res.status(500).json({
+//       message: 'Error downloading document',
+//       error: error.message
+//     });
+//   }
+// };
+
 export const downloadDocument = async (req, res) => {
   try {
-    const document = await Document.findOne({
-      _id: req.params.id,
-      owner: req.user.userId
-    });
-
+    const document = await Document.findById(req.params.id);
     if (!document) {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    if (!document.data || !document.mimeType) {
-      return res.status(404).json({ message: 'Document data not found' });
-    }
+    res.setHeader('Content-Type', document.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(document.originalName)}"`
+    );
+    res.setHeader('Content-Length', document.size);
 
-    res.set({
-      'Content-Type': document.mimeType,
-      'Content-Disposition': `attachment; filename="${document.originalName}"`,
-      'Content-Length': document.size
-    });
-
-    return res.send(document.data);
-
-  } catch (error) {
-    console.error('Download error:', error);
-    res.status(500).json({
-      message: 'Error downloading document',
-      error: error.message
-    });
+    return res.end(document.data);
+  } catch (err) {
+    console.error('Error downloading document:', err);
+    res.status(500).json({ message: 'Server error' });
   }
 };
+
 
 export const updateDocument = async (req, res) => {
   try {
@@ -463,51 +485,75 @@ export const downloadSharedDocument = async (req, res) => {
 };
 
 // New controller to view shared document inline
+// export const viewSharedDocument = async (req, res) => {
+//   try {
+//     const { shareToken } = req.params;
+
+//     const share = await Share.findOne({
+//       shareToken,
+//       isActive: true,
+//       $or: [
+//         { expiresAt: { $gt: new Date() } },
+//         { expiresAt: null }
+//       ]
+//     }).populate('document');
+
+//     if (!share) {
+//       return res.status(404).json({ message: 'Shared document not found or expired' });
+//     }
+
+//     // Check if permission allows viewing (either 'view' or 'download')
+//     if (!['view', 'download'].includes(share.permissions)) {
+//       return res.status(403).json({ message: 'View permission not granted' });
+//     }
+
+//     const document = share.document;
+
+//     if (!document.data || !document.mimeType) {
+//       return res.status(404).json({ message: 'Document data not found' });
+//     }
+
+//     // Update access info
+//     share.accessCount = (share.accessCount || 0) + 1;
+//     share.lastAccessed = new Date();
+//     await share.save();
+
+//     res.set({
+//   'Content-Type': 'application/pdf',
+//   'Content-Disposition': `attachment; filename="${document.originalName}"`,
+//   'Content-Length': document.size
+// });
+//     return res.send(document.data);
+
+//   } catch (error) {
+//     console.error('View shared document error:', error);
+//     res.status(500).json({
+//       message: 'Error viewing shared document',
+//       error: error.message
+//     });
+//   }
+// };
+
+
 export const viewSharedDocument = async (req, res) => {
   try {
-    const { shareToken } = req.params;
-
-    const share = await Share.findOne({
-      shareToken,
-      isActive: true,
-      $or: [
-        { expiresAt: { $gt: new Date() } },
-        { expiresAt: null }
-      ]
-    }).populate('document');
-
-    if (!share) {
-      return res.status(404).json({ message: 'Shared document not found or expired' });
+    const sharedDoc = await SharedDocument.findOne({ shareToken: req.params.shareToken }).populate('document');
+    if (!sharedDoc) {
+      return res.status(404).json({ message: 'Shared document not found' });
     }
 
-    // Check if permission allows viewing (either 'view' or 'download')
-    if (!['view', 'download'].includes(share.permissions)) {
-      return res.status(403).json({ message: 'View permission not granted' });
-    }
+    const doc = sharedDoc.document;
 
-    const document = share.document;
+    res.setHeader('Content-Type', doc.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${encodeURIComponent(doc.originalName)}"`
+    );
+    res.setHeader('Content-Length', doc.size);
 
-    if (!document.data || !document.mimeType) {
-      return res.status(404).json({ message: 'Document data not found' });
-    }
-
-    // Update access info
-    share.accessCount = (share.accessCount || 0) + 1;
-    share.lastAccessed = new Date();
-    await share.save();
-
-    res.set({
-  'Content-Type': 'application/pdf',
-  'Content-Disposition': `attachment; filename="${document.originalName}"`,
-  'Content-Length': document.size
-});
-    return res.send(document.data);
-
-  } catch (error) {
-    console.error('View shared document error:', error);
-    res.status(500).json({
-      message: 'Error viewing shared document',
-      error: error.message
-    });
+    return res.end(doc.data);
+  } catch (err) {
+    console.error('Error viewing shared document:', err);
+    res.status(500).json({ message: 'Server error' });
   }
 };
