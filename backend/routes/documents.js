@@ -1,3 +1,4 @@
+// routes/documentRoutes.js
 import express from 'express';
 import multer from 'multer';
 import { body } from 'express-validator';
@@ -19,7 +20,7 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Use memory storage so files are kept in buffer (not saved on disk)
+// Use multer memory storage for buffer upload
 const storage = multer.memoryStorage();
 
 const fileFilter = (req, file, cb) => {
@@ -57,7 +58,7 @@ const shareValidation = [
   body('expiresIn').optional().isInt({ min: 1, max: 365 })
 ];
 
-// Apply authentication middleware to all routes
+// All routes require authentication
 router.use(authenticateToken);
 
 // Routes

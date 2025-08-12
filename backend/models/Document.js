@@ -16,10 +16,16 @@ const documentSchema = new mongoose.Schema({
     enum: ['education', 'healthcare', 'government', 'finance', 'transport', 'other'],
     lowercase: true
   },
-  filename: {
-    type: String,
+  // Remove disk storage fields
+  // filename: { type: String, required: true }, 
+  // filePath: { type: String, required: true },
+
+  // Add buffer to store actual file data
+  data: {
+    type: Buffer,
     required: true
   },
+
   originalName: {
     type: String,
     required: true
@@ -30,10 +36,6 @@ const documentSchema = new mongoose.Schema({
   },
   size: {
     type: Number,
-    required: true
-  },
-  filePath: {
-    type: String,
     required: true
   },
   owner: {

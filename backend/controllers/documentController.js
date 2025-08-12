@@ -1,9 +1,8 @@
+// controllers/documentController.js
 import Document from '../models/Document.js';
 import Share from '../models/Share.js';
 import User from '../models/User.js';
 import { sendShareNotification } from '../utils/email.js';
-import path from 'path';
-import fs from 'fs/promises';
 import { validationResult } from 'express-validator';
 
 export const uploadDocument = async (req, res) => {
@@ -21,16 +20,15 @@ export const uploadDocument = async (req, res) => {
     }
 
     const { title, description, category } = req.body;
-    
+
     const document = new Document({
       title: title || req.file.originalname,
       description,
       category: category.toLowerCase(),
-      filename: req.file.filename,
+      data: req.file.buffer,          // Store file buffer here
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       size: req.file.size,
-      filePath: req.file.path,
       owner: req.user.userId,
       metadata: {
         uploadIP: req.ip,
@@ -47,7 +45,6 @@ export const uploadDocument = async (req, res) => {
         title: document.title,
         description: document.description,
         category: document.category,
-        filename: document.filename,
         size: document.size,
         createdAt: document.createdAt
       }
@@ -55,14 +52,6 @@ export const uploadDocument = async (req, res) => {
 
   } catch (error) {
     console.error('Upload error:', error);
-    // Delete uploaded file if document creation failed
-    if (req.file) {
-      try {
-        await fs.unlink(req.file.path);
-      } catch (unlinkError) {
-        console.error('Error deleting uploaded file:', unlinkError);
-      }
-    }
     res.status(500).json({
       message: 'Document upload failed',
       error: error.message
@@ -90,7 +79,7 @@ export const getDocuments = async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit)
-      .select('-filePath');
+      .select('-data');  // exclude file buffer from list
 
     const total = await Document.countDocuments(query);
 
@@ -117,7 +106,7 @@ export const getDocument = async (req, res) => {
     const document = await Document.findOne({
       _id: req.params.id,
       owner: req.user.userId
-    }).select('-filePath');
+    }).select('-data');  // exclude file buffer
 
     if (!document) {
       return res.status(404).json({ message: 'Document not found' });
@@ -145,14 +134,17 @@ export const downloadDocument = async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    // Check if file exists
-    try {
-      await fs.access(document.filePath);
-    } catch {
-      return res.status(404).json({ message: 'File not found on server' });
+    if (!document.data || !document.mimeType) {
+      return res.status(404).json({ message: 'Document data not found' });
     }
 
-    res.download(document.filePath, document.originalName);
+    res.set({
+      'Content-Type': document.mimeType,
+      'Content-Disposition': `attachment; filename="${document.originalName}"`,
+      'Content-Length': document.size
+    });
+
+    return res.send(document.data);
 
   } catch (error) {
     console.error('Download error:', error);
@@ -223,13 +215,6 @@ export const deleteDocument = async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    // Delete file from filesystem
-    try {
-      await fs.unlink(document.filePath);
-    } catch (error) {
-      console.error('Error deleting file:', error);
-    }
-
     // Delete shares associated with this document
     await Share.deleteMany({ document: document._id });
 
@@ -251,22 +236,18 @@ export const getDashboardStats = async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    // Get total documents count
     const totalDocuments = await Document.countDocuments({ owner: userId });
 
-    // Get recent documents (last 5)
     const recentDocuments = await Document.find({ owner: userId })
       .sort({ createdAt: -1 })
       .limit(5)
       .select('title category createdAt');
 
-    // Get shared documents count
-    const sharedDocuments = await Share.countDocuments({ 
-      sharedBy: userId, 
-      isActive: true 
+    const sharedDocuments = await Share.countDocuments({
+      sharedBy: userId,
+      isActive: true
     });
 
-    // Get categories breakdown
     const categoriesAgg = await Document.aggregate([
       { $match: { owner: userId } },
       { $group: { _id: '$category', count: { $sum: 1 } } }
@@ -327,7 +308,6 @@ export const shareDocument = async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    // Check if user exists (optional - can share with non-users via email)
     const sharedWithUser = await User.findOne({ email });
 
     let expiresAt;
@@ -347,10 +327,8 @@ export const shareDocument = async (req, res) => {
 
     await share.save();
 
-    // Get the sharer's information
     const sharer = await User.findById(req.user.userId).select('name email');
 
-    // Send email notification
     try {
       await sendShareNotification(
         email,
@@ -360,7 +338,6 @@ export const shareDocument = async (req, res) => {
       );
     } catch (emailError) {
       console.error('Error sending share notification:', emailError);
-      // Don't fail the share if email fails
     }
 
     res.status(201).json({
@@ -386,13 +363,11 @@ export const shareDocument = async (req, res) => {
 
 export const getSharedDocuments = async (req, res) => {
   try {
-    // Documents shared by the user
     const sharedByMe = await Share.find({ sharedBy: req.user.userId })
       .populate('document', 'title category createdAt')
       .sort({ createdAt: -1 });
 
-    // Documents shared with the user
-    const sharedWithMe = await Share.find({ 
+    const sharedWithMe = await Share.find({
       $or: [
         { sharedWith: req.user.userId },
         { sharedWithEmail: req.user.email }
@@ -444,8 +419,7 @@ export const downloadSharedDocument = async (req, res) => {
   try {
     const { shareToken } = req.params;
 
-    // Find the share by token
-    const share = await Share.findOne({ 
+    const share = await Share.findOne({
       shareToken,
       isActive: true,
       $or: [
@@ -458,26 +432,27 @@ export const downloadSharedDocument = async (req, res) => {
       return res.status(404).json({ message: 'Shared document not found or expired' });
     }
 
-    // Check permissions
     if (share.permissions !== 'download') {
       return res.status(403).json({ message: 'Download permission not granted' });
     }
 
     const document = share.document;
 
-    // Check if file exists
-    try {
-      await fs.access(document.filePath);
-    } catch {
-      return res.status(404).json({ message: 'File not found on server' });
+    if (!document.data || !document.mimeType) {
+      return res.status(404).json({ message: 'Document data not found' });
     }
 
-    // Update access count and last accessed
-    share.accessCount += 1;
+    share.accessCount = (share.accessCount || 0) + 1;
     share.lastAccessed = new Date();
     await share.save();
 
-    res.download(document.filePath, document.originalName);
+    res.set({
+      'Content-Type': document.mimeType,
+      'Content-Disposition': `attachment; filename="${document.originalName}"`,
+      'Content-Length': document.size
+    });
+
+    return res.send(document.data);
 
   } catch (error) {
     console.error('Download shared document error:', error);
