@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Share2, Link2, Users, Eye, Calendar, Mail, Download } from 'lucide-react';
+import { Share2, Users, Eye, Calendar, Mail, Download } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
@@ -15,10 +15,11 @@ const SharedDocuments = () => {
 
   const fetchSharedDocuments = async () => {
     try {
-      const response = await axios.get('/api/documents/shared');
-      setSharedByMe(response.data.sharedByMe);
-      setSharedWithMe(response.data.sharedWithMe);
+      const { data } = await axios.get('/api/documents/shared');
+      setSharedByMe(data.sharedByMe || []);
+      setSharedWithMe(data.sharedWithMe || []);
     } catch (error) {
+      console.error('Error fetching shared documents:', error);
       toast.error('Error fetching shared documents');
     } finally {
       setLoading(false);
@@ -29,9 +30,10 @@ const SharedDocuments = () => {
     if (window.confirm('Are you sure you want to revoke this share?')) {
       try {
         await axios.delete(`/api/documents/share/${shareId}`);
-        setSharedByMe(sharedByMe.filter(share => share._id !== shareId));
+        setSharedByMe((prev) => prev.filter((share) => share._id !== shareId));
         toast.success('Share revoked successfully');
       } catch (error) {
+        console.error('Error revoking share:', error);
         toast.error('Error revoking share');
       }
     }
@@ -39,17 +41,25 @@ const SharedDocuments = () => {
 
   const handleDownloadShared = async (shareToken, filename) => {
     try {
-      const response = await axios.get(`/api/documents/shared/${shareToken}/download`, {
-        responseType: 'blob'
-      });
+      const response = await axios.get(
+        `/api/documents/shared/${shareToken}/download`,
+        { responseType: 'blob' }
+      );
+
+      if (!response.data || response.data.size === 0) {
+        toast.error('File is empty or could not be downloaded');
+        return;
+      }
+
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', filename);
+      link.setAttribute('download', `${filename || 'document'}.pdf`);
       document.body.appendChild(link);
       link.click();
       link.remove();
     } catch (error) {
+      console.error('Error downloading shared document:', error);
       toast.error('Error downloading shared document');
     }
   };
@@ -71,6 +81,7 @@ const SharedDocuments = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Shared Documents</h1>
         <p className="text-gray-600">
@@ -104,18 +115,20 @@ const SharedDocuments = () => {
         </nav>
       </div>
 
-      {/* Shared by Me Tab */}
+      {/* Shared by Me */}
       {activeTab === 'shared-by-me' && (
         <div>
           {sharedByMe.length === 0 ? (
             <div className="text-center py-12">
               <Share2 className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">No shared documents</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                No shared documents
+              </h2>
               <p className="text-gray-600 mb-6">
                 You haven't shared any documents yet. Go to your documents to start sharing.
               </p>
               <button
-                onClick={() => window.location.href = '/documents'}
+                onClick={() => (window.location.href = '/documents')}
                 className="btn-primary"
               >
                 View My Documents
@@ -131,8 +144,12 @@ const SharedDocuments = () => {
                         <Share2 className="h-6 w-6 text-primary-600" />
                       </div>
                       <div>
-                        <h3 className="font-semibold text-gray-900">{share.document.title}</h3>
-                        <p className="text-sm text-gray-600">{share.document.category}</p>
+                        <h3 className="font-semibold text-gray-900">
+                          {share.document?.title || 'Untitled'}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          {share.document?.category || 'Uncategorized'}
+                        </p>
                         <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
                           <span className="flex items-center">
                             <Mail className="h-3 w-3 mr-1" />
@@ -144,17 +161,19 @@ const SharedDocuments = () => {
                           </span>
                           <span className="flex items-center">
                             <Eye className="h-3 w-3 mr-1" />
-                            {share.permissions}
+                            {share.permissions || 'N/A'}
                           </span>
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        share.isActive 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          share.isActive
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}
+                      >
                         {share.isActive ? 'Active' : 'Inactive'}
                       </span>
                       <button
@@ -172,13 +191,15 @@ const SharedDocuments = () => {
         </div>
       )}
 
-      {/* Shared with Me Tab */}
+      {/* Shared with Me */}
       {activeTab === 'shared-with-me' && (
         <div>
           {sharedWithMe.length === 0 ? (
             <div className="text-center py-12">
               <Users className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">No shared documents</h2>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                No shared documents
+              </h2>
               <p className="text-gray-600">
                 No one has shared documents with you yet.
               </p>
@@ -193,12 +214,16 @@ const SharedDocuments = () => {
                         <Users className="h-6 w-6 text-secondary-600" />
                       </div>
                       <div>
-                        <h3 className="font-semibold text-gray-900">{share.document.title}</h3>
-                        <p className="text-sm text-gray-600">{share.document.category}</p>
+                        <h3 className="font-semibold text-gray-900">
+                          {share.document?.title || 'Untitled'}
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          {share.document?.category || 'Uncategorized'}
+                        </p>
                         <div className="flex items-center space-x-4 mt-2 text-xs text-gray-500">
                           <span className="flex items-center">
                             <Users className="h-3 w-3 mr-1" />
-                            Shared by {share.sharedBy.name}
+                            Shared by {share.sharedBy?.name || 'Unknown'}
                           </span>
                           <span className="flex items-center">
                             <Calendar className="h-3 w-3 mr-1" />
@@ -206,22 +231,29 @@ const SharedDocuments = () => {
                           </span>
                           <span className="flex items-center">
                             <Eye className="h-3 w-3 mr-1" />
-                            {share.permissions}
+                            {share.permissions || 'N/A'}
                           </span>
                         </div>
                       </div>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        share.isActive 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
+                      <span
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          share.isActive
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}
+                      >
                         {share.isActive ? 'Available' : 'Expired'}
                       </span>
                       {share.isActive && (
-                        <button 
-                          onClick={() => handleDownloadShared(share.shareToken, share.document.title)}
+                        <button
+                          onClick={() =>
+                            handleDownloadShared(
+                              share.shareToken,
+                              share.document?.title
+                            )
+                          }
                           className="btn-secondary text-sm py-1 px-3 flex items-center space-x-1"
                         >
                           <Download className="h-3 w-3" />
