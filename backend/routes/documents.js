@@ -1,5 +1,8 @@
+// routes/documentRoutes.js
 import express from 'express';
 import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import { body } from 'express-validator';
 import {
   uploadDocument,
@@ -14,19 +17,31 @@ import {
   getSharedDocuments,
   revokeShare,
   downloadSharedDocument,
-  viewSharedDocument   // <-- import the new controller here
+  viewSharedDocument
 } from '../controllers/documentController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
-const router = express.Router();
+// Ensure uploads folder exists
+const uploadDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+}
 
-const storage = multer.memoryStorage();
+// Multer disk storage config
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
 
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /pdf|doc|docx|jpg|jpeg|png|gif/;
-  const extname = allowedTypes.test(file.originalname.toLowerCase());
+  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
   const mimetype = allowedTypes.test(file.mimetype);
-
   if (mimetype && extname) {
     cb(null, true);
   } else {
@@ -36,9 +51,7 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage,
-  limits: {
-    fileSize: 10 * 1024 * 1024 // 10MB limit
-  },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter
 });
 
@@ -56,7 +69,8 @@ const shareValidation = [
   body('expiresIn').optional().isInt({ min: 1, max: 365 })
 ];
 
-// All routes require authentication
+// Routes
+const router = express.Router();
 router.use(authenticateToken);
 
 router.post('/upload', upload.single('file'), documentValidation, uploadDocument);
@@ -71,6 +85,6 @@ router.delete('/:id', deleteDocument);
 router.post('/share', shareValidation, shareDocument);
 router.delete('/share/:shareId', revokeShare);
 router.get('/shared/:shareToken/download', downloadSharedDocument);
-router.get('/shared/:shareToken/view', viewSharedDocument);  // <-- new route for inline view
+router.get('/shared/:shareToken/view', viewSharedDocument);
 
 export default router;

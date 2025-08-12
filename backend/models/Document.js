@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import path from 'path';
 
 const documentSchema = new mongoose.Schema({
   title: {
@@ -16,16 +17,14 @@ const documentSchema = new mongoose.Schema({
     enum: ['education', 'healthcare', 'government', 'finance', 'transport', 'other'],
     lowercase: true
   },
-  // Remove disk storage fields
-  // filename: { type: String, required: true }, 
-  // filePath: { type: String, required: true },
-
-  // Add buffer to store actual file data
-  data: {
-    type: Buffer,
+  filename: { // stored file name in disk
+    type: String,
     required: true
   },
-
+  filePath: { // full path to file
+    type: String,
+    required: true
+  },
   originalName: {
     type: String,
     required: true
@@ -59,7 +58,6 @@ const documentSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for better search performance
 documentSchema.index({ title: 'text', description: 'text', tags: 'text' });
 documentSchema.index({ owner: 1, category: 1 });
 documentSchema.index({ createdAt: -1 });

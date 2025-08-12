@@ -1,233 +1,133 @@
+import fs from 'fs';
+import path from 'path';
 import Document from '../models/Document.js';
-import Share from '../models/Share.js';
-import User from '../models/User.js';
-import { sendShareNotification } from '../utils/email.js';
-import { validationResult } from 'express-validator';
+import SharedDocument from '../models/SharedDocument.js';
+import mongoose from 'mongoose';
 
+// Ensure uploads directory exists
+const uploadDir = path.join(process.cwd(), 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log(`✅ Created uploads folder at: ${uploadDir}`);
+}
+
+/**
+ * Upload document
+ */
 export const uploadDocument = async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        message: 'Validation errors',
-        errors: errors.array()
-      });
-    }
-
     if (!req.file) {
       return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    const { title, description, category } = req.body;
-
-    const document = new Document({
-      title: title || req.file.originalname,
-      description,
-      category: category.toLowerCase(),
-      data: req.file.buffer,
+    const newDoc = new Document({
+      title: req.body.title || req.file.originalname,
+      description: req.body.description || '',
+      category: req.body.category,
+      filename: req.file.filename,
+      filePath: req.file.path,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       size: req.file.size,
-      owner: req.user.userId,
+      owner: req.user.userId, // ✅ Consistent owner field
       metadata: {
         uploadIP: req.ip,
         userAgent: req.get('User-Agent')
       }
     });
 
-    await document.save();
-
-    res.status(201).json({
-      message: 'Document uploaded successfully',
-      document: {
-        id: document._id,
-        title: document.title,
-        description: document.description,
-        category: document.category,
-        size: document.size,
-        createdAt: document.createdAt
-      }
-    });
-
+    await newDoc.save();
+    res.status(201).json({ message: 'File uploaded successfully', document: newDoc });
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({
-      message: 'Document upload failed',
-      error: error.message
-    });
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
 };
 
+/**
+ * Get all documents for the logged-in user
+ */
 export const getDocuments = async (req, res) => {
   try {
-    const { page = 1, limit = 10, category, search } = req.query;
-    const query = { owner: req.user.userId };
-
-    if (category && category !== 'all') {
-      query.category = category;
-    }
-
-    if (search) {
-      query.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } }
-      ];
-    }
-
-    const documents = await Document.find(query)
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit)
-      .select('-data');  // exclude file buffer
-
-    const total = await Document.countDocuments(query);
-
-    res.json({
-      documents,
-      pagination: {
-        current: page,
-        pages: Math.ceil(total / limit),
-        total
-      }
-    });
-
+    const documents = await Document.find({ owner: req.user.userId }).sort({ createdAt: -1 });
+    res.json(documents);
   } catch (error) {
-    console.error('Get documents error:', error);
-    res.status(500).json({
-      message: 'Error fetching documents',
-      error: error.message
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
+/**
+ * Get single document
+ */
 export const getDocument = async (req, res) => {
   try {
     const document = await Document.findOne({
       _id: req.params.id,
       owner: req.user.userId
-    }).select('-data');  // exclude file buffer
-
-    if (!document) {
-      return res.status(404).json({ message: 'Document not found' });
-    }
-
-    res.json({ document });
-
-  } catch (error) {
-    console.error('Get document error:', error);
-    res.status(500).json({
-      message: 'Error fetching document',
-      error: error.message
     });
-  }
-};
 
-// export const downloadDocument = async (req, res) => {
-//   try {
-//     const document = await Document.findOne({
-//       _id: req.params.id,
-//       owner: req.user.userId
-//     });
-
-//     if (!document) {
-//       return res.status(404).json({ message: 'Document not found' });
-//     }
-
-//     if (!document.data || !document.mimeType) {
-//       return res.status(404).json({ message: 'Document data not found' });
-//     }
-
-//     res.set({
-//       'Content-Type': document.mimeType,
-//       'Content-Disposition': `attachment; filename="${document.originalName}"`,
-//       'Content-Length': document.size
-//     });
-
-//     return res.send(document.data);
-
-//   } catch (error) {
-//     console.error('Download error:', error);
-//     res.status(500).json({
-//       message: 'Error downloading document',
-//       error: error.message
-//     });
-//   }
-// };
-
-export const downloadDocument = async (req, res) => {
-  try {
-    const document = await Document.findById(req.params.id);
     if (!document) {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    res.setHeader('Content-Type', document.mimeType);
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(document.originalName)}"`
-    );
-    res.setHeader('Content-Length', document.size);
-
-    return res.end(document.data);
-  } catch (err) {
-    console.error('Error downloading document:', err);
+    res.json(document);
+  } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
 };
 
+/**
+ * Download document
+ */
+export const downloadDocument = async (req, res) => {
+  try {
+    const document = await Document.findOne({
+      _id: req.params.id,
+      owner: req.user.userId
+    });
 
+    if (!document) {
+      return res.status(404).json({ message: 'Document not found' });
+    }
+
+    const filePath = document.filePath;
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: 'File not found on server' });
+    }
+
+    res.download(filePath, document.originalName);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+/**
+ * Update document
+ */
 export const updateDocument = async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        message: 'Validation errors',
-        errors: errors.array()
-      });
-    }
+    const updated = await Document.findOneAndUpdate(
+      { _id: req.params.id, owner: req.user.userId },
+      { $set: req.body },
+      { new: true }
+    );
 
-    const { title, description, category, tags } = req.body;
-
-    const document = await Document.findOne({
-      _id: req.params.id,
-      owner: req.user.userId
-    });
-
-    if (!document) {
+    if (!updated) {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    document.title = title || document.title;
-    document.description = description || document.description;
-    document.category = category ? category.toLowerCase() : document.category;
-    document.tags = tags || document.tags;
-
-    await document.save();
-
-    res.json({
-      message: 'Document updated successfully',
-      document: {
-        id: document._id,
-        title: document.title,
-        description: document.description,
-        category: document.category,
-        tags: document.tags,
-        updatedAt: document.updatedAt
-      }
-    });
-
+    res.json({ message: 'Document updated successfully', document: updated });
   } catch (error) {
-    console.error('Update document error:', error);
-    res.status(500).json({
-      message: 'Error updating document',
-      error: error.message
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
+/**
+ * Delete document
+ */
 export const deleteDocument = async (req, res) => {
   try {
-    const document = await Document.findOne({
+    const document = await Document.findOneAndDelete({
       _id: req.params.id,
       owner: req.user.userId
     });
@@ -236,89 +136,47 @@ export const deleteDocument = async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    // Delete shares associated with this document
-    await Share.deleteMany({ document: document._id });
-
-    // Delete document from database
-    await Document.findByIdAndDelete(document._id);
+    // Delete file from disk
+    if (document.filePath && fs.existsSync(document.filePath)) {
+      fs.unlinkSync(document.filePath);
+    }
 
     res.json({ message: 'Document deleted successfully' });
-
   } catch (error) {
-    console.error('Delete document error:', error);
-    res.status(500).json({
-      message: 'Error deleting document',
-      error: error.message
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
+/**
+ * Dashboard stats
+ */
 export const getDashboardStats = async (req, res) => {
   try {
-    const userId = req.user.userId;
-
-    const totalDocuments = await Document.countDocuments({ owner: userId });
-
-    const recentDocuments = await Document.find({ owner: userId })
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .select('title category createdAt');
-
-    const sharedDocuments = await Share.countDocuments({
-      sharedBy: userId,
-      isActive: true
-    });
-
-    const categoriesAgg = await Document.aggregate([
-      { $match: { owner: userId } },
-      { $group: { _id: '$category', count: { $sum: 1 } } }
-    ]);
-
-    const categories = {};
-    categoriesAgg.forEach(item => {
-      categories[item._id] = item.count;
-    });
-
-    res.json({
-      totalDocuments,
-      recentDocuments,
-      sharedDocuments,
-      categories
-    });
-
+    const count = await Document.countDocuments({ owner: req.user.userId });
+    res.json({ totalDocuments: count });
   } catch (error) {
-    console.error('Dashboard stats error:', error);
-    res.status(500).json({
-      message: 'Error fetching dashboard data',
-      error: error.message
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
+/**
+ * Categories
+ */
 export const getCategories = async (req, res) => {
   try {
     const categories = await Document.distinct('category', { owner: req.user.userId });
-    res.json({ categories });
+    res.json(categories);
   } catch (error) {
-    console.error('Get categories error:', error);
-    res.status(500).json({
-      message: 'Error fetching categories',
-      error: error.message
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
+/**
+ * Share document
+ */
 export const shareDocument = async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        message: 'Validation errors',
-        errors: errors.array()
-      });
-    }
-
-    const { documentId, email, permissions = 'view', expiresIn } = req.body;
+    const { documentId, email, permissions, expiresIn } = req.body;
 
     const document = await Document.findOne({
       _id: documentId,
@@ -329,231 +187,117 @@ export const shareDocument = async (req, res) => {
       return res.status(404).json({ message: 'Document not found' });
     }
 
-    const sharedWithUser = await User.findOne({ email });
+    const expiresAt = expiresIn
+      ? new Date(Date.now() + expiresIn * 24 * 60 * 60 * 1000)
+      : null;
 
-    let expiresAt;
-    if (expiresIn) {
-      expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + parseInt(expiresIn));
-    }
-
-    const share = new Share({
-      document: documentId,
-      sharedBy: req.user.userId,
+    const sharedDoc = new SharedDocument({
+      document: document._id,
       sharedWithEmail: email,
-      sharedWith: sharedWithUser?._id,
       permissions,
-      expiresAt
+      expiresAt,
+      isActive: true
     });
 
-    await share.save();
-
-    const sharer = await User.findById(req.user.userId).select('name email');
-
-    try {
-      await sendShareNotification(
-        email,
-        document.title,
-        sharer.name,
-        share.shareToken
-      );
-    } catch (emailError) {
-      console.error('Error sending share notification:', emailError);
-    }
-
-    res.status(201).json({
-      message: 'Document shared successfully',
-      shareToken: share.shareToken,
-      share: {
-        id: share._id,
-        sharedWithEmail: share.sharedWithEmail,
-        permissions: share.permissions,
-        expiresAt: share.expiresAt,
-        createdAt: share.createdAt
-      }
-    });
-
+    await sharedDoc.save();
+    res.status(201).json({ message: 'Document shared successfully', shareToken: sharedDoc._id });
   } catch (error) {
-    console.error('Share document error:', error);
-    res.status(500).json({
-      message: 'Error sharing document',
-      error: error.message
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
+/**
+ * Get shared documents for logged-in user
+ */
 export const getSharedDocuments = async (req, res) => {
   try {
-    const sharedByMe = await Share.find({ sharedBy: req.user.userId })
-      .populate('document', 'title category createdAt')
-      .sort({ createdAt: -1 });
+    const sharedDocs = await SharedDocument.find({
+      sharedWithEmail: req.user.email,
+      isActive: true,
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
+    }).populate('document');
 
-    const sharedWithMe = await Share.find({
-      $or: [
-        { sharedWith: req.user.userId },
-        { sharedWithEmail: req.user.email }
-      ]
-    })
-      .populate('document', 'title category createdAt')
-      .populate('sharedBy', 'name email')
-      .sort({ createdAt: -1 });
-
-    res.json({
-      sharedByMe,
-      sharedWithMe
-    });
-
+    res.json(sharedDocs);
   } catch (error) {
-    console.error('Get shared documents error:', error);
-    res.status(500).json({
-      message: 'Error fetching shared documents',
-      error: error.message
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
+/**
+ * Revoke share
+ */
 export const revokeShare = async (req, res) => {
   try {
-    const share = await Share.findOne({
-      _id: req.params.shareId,
-      sharedBy: req.user.userId
-    });
+    const updated = await SharedDocument.findByIdAndUpdate(
+      req.params.shareId,
+      { isActive: false },
+      { new: true }
+    );
 
-    if (!share) {
+    if (!updated) {
       return res.status(404).json({ message: 'Share not found' });
     }
 
-    await Share.findByIdAndDelete(share._id);
-
     res.json({ message: 'Share revoked successfully' });
-
   } catch (error) {
-    console.error('Revoke share error:', error);
-    res.status(500).json({
-      message: 'Error revoking share',
-      error: error.message
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
+/**
+ * Download shared document
+ */
 export const downloadSharedDocument = async (req, res) => {
   try {
-    const { shareToken } = req.params;
-
-    const share = await Share.findOne({
-      shareToken,
+    const sharedDoc = await SharedDocument.findOne({
+      _id: req.params.shareToken,
       isActive: true,
-      $or: [
-        { expiresAt: { $gt: new Date() } },
-        { expiresAt: null }
-      ]
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
     }).populate('document');
 
-    if (!share) {
+    if (!sharedDoc) {
       return res.status(404).json({ message: 'Shared document not found or expired' });
     }
 
-    if (share.permissions !== 'download') {
-      return res.status(403).json({ message: 'Download permission not granted' });
+    const filePath = sharedDoc.document.filePath;
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: 'File not found on server' });
     }
 
-    const document = share.document;
-
-    if (!document.data || !document.mimeType) {
-      return res.status(404).json({ message: 'Document data not found' });
-    }
-
-    share.accessCount = (share.accessCount || 0) + 1;
-    share.lastAccessed = new Date();
-    await share.save();
-
-    res.set({
-      'Content-Type': document.mimeType,
-      'Content-Disposition': `attachment; filename="${document.originalName}"`,
-      'Content-Length': document.size
-    });
-
-    return res.send(document.data);
-
+    res.download(filePath, sharedDoc.document.originalName);
   } catch (error) {
-    console.error('Download shared document error:', error);
-    res.status(500).json({
-      message: 'Error downloading shared document',
-      error: error.message
-    });
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
-// New controller to view shared document inline
-// export const viewSharedDocument = async (req, res) => {
-//   try {
-//     const { shareToken } = req.params;
-
-//     const share = await Share.findOne({
-//       shareToken,
-//       isActive: true,
-//       $or: [
-//         { expiresAt: { $gt: new Date() } },
-//         { expiresAt: null }
-//       ]
-//     }).populate('document');
-
-//     if (!share) {
-//       return res.status(404).json({ message: 'Shared document not found or expired' });
-//     }
-
-//     // Check if permission allows viewing (either 'view' or 'download')
-//     if (!['view', 'download'].includes(share.permissions)) {
-//       return res.status(403).json({ message: 'View permission not granted' });
-//     }
-
-//     const document = share.document;
-
-//     if (!document.data || !document.mimeType) {
-//       return res.status(404).json({ message: 'Document data not found' });
-//     }
-
-//     // Update access info
-//     share.accessCount = (share.accessCount || 0) + 1;
-//     share.lastAccessed = new Date();
-//     await share.save();
-
-//     res.set({
-//   'Content-Type': 'application/pdf',
-//   'Content-Disposition': `attachment; filename="${document.originalName}"`,
-//   'Content-Length': document.size
-// });
-//     return res.send(document.data);
-
-//   } catch (error) {
-//     console.error('View shared document error:', error);
-//     res.status(500).json({
-//       message: 'Error viewing shared document',
-//       error: error.message
-//     });
-//   }
-// };
-
-
+/**
+ * View shared document inline
+ */
 export const viewSharedDocument = async (req, res) => {
   try {
-    const sharedDoc = await SharedDocument.findOne({ shareToken: req.params.shareToken }).populate('document');
+    const sharedDoc = await SharedDocument.findOne({
+      _id: req.params.shareToken,
+      isActive: true,
+      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
+    }).populate('document');
+
     if (!sharedDoc) {
-      return res.status(404).json({ message: 'Shared document not found' });
+      return res.status(404).json({ message: 'Shared document not found or expired' });
     }
 
-    const doc = sharedDoc.document;
+    const filePath = sharedDoc.document.filePath;
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: 'File not found on server' });
+    }
 
-    res.setHeader('Content-Type', doc.mimeType);
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename="${encodeURIComponent(doc.originalName)}"`
-    );
-    res.setHeader('Content-Length', doc.size);
+    res.set({
+      'Content-Type': sharedDoc.document.mimeType,
+      'Content-Disposition': `inline; filename="${sharedDoc.document.originalName}"`,
+      'Content-Length': sharedDoc.document.size
+    });
 
-    return res.end(doc.data);
-  } catch (err) {
-    console.error('Error viewing shared document:', err);
+    fs.createReadStream(filePath).pipe(res);
+  } catch (error) {
     res.status(500).json({ message: 'Server error' });
   }
 };
