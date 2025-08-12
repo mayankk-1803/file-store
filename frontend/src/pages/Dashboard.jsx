@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Upload, Share2, TrendingUp, Users, Clock, Shield } from 'lucide-react';
+import { FileText, Upload, Share2, TrendingUp, Clock, Shield } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../utils/AuthContext.jsx';
 
@@ -21,7 +21,12 @@ const Dashboard = () => {
   const fetchDashboardData = async () => {
     try {
       const response = await axios.get('/api/documents/dashboard');
-      setStats(response.data);
+      setStats({
+        totalDocuments: response.data?.totalDocuments || 0,
+        recentDocuments: response.data?.recentDocuments || [],
+        sharedDocuments: response.data?.sharedDocuments || 0,
+        categories: response.data?.categories || {}
+      });
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -68,7 +73,7 @@ const Dashboard = () => {
     },
     {
       title: 'Categories',
-      value: Object.keys(stats.categories).length,
+      value: Object.keys(stats.categories || {}).length,
       icon: TrendingUp,
       color: 'text-accent-600 bg-accent-100'
     }
@@ -84,15 +89,13 @@ const Dashboard = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      {/* Welcome Section */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Welcome back, {user?.name}!
+          Welcome back, {user?.name || 'User'}!
         </h1>
         <p className="text-gray-600">Manage your digital documents securely and efficiently.</p>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         {statCards.map((stat, index) => (
           <div key={index} className="card p-6">
@@ -178,9 +181,9 @@ const Dashboard = () => {
         {/* Categories Overview */}
         <div className="card p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">Categories Overview</h2>
-          {Object.keys(stats.categories).length > 0 ? (
+          {Object.keys(stats.categories || {}).length > 0 ? (
             <div className="space-y-4">
-              {Object.entries(stats.categories).map(([category, count], index) => (
+              {Object.entries(stats.categories || {}).map(([category, count], index) => (
                 <div key={index} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
                   <span className="font-medium text-gray-900 capitalize">{category}</span>
                   <span className="bg-primary-100 text-primary-800 px-3 py-1 rounded-full text-sm font-medium">
