@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Search, Filter, Download, Share2, Edit, Trash2, Eye } from 'lucide-react';
+import { FileText, Search, Download, Share2, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import ShareModal from '../components/ShareModal.jsx';
@@ -20,9 +20,10 @@ const Documents = () => {
   const fetchDocuments = async () => {
     try {
       const response = await axios.get('/api/documents');
-      setDocuments(response.data.documents);
+      setDocuments(Array.isArray(response.data.documents) ? response.data.documents : []);
     } catch (error) {
       toast.error('Error fetching documents');
+      setDocuments([]);
     } finally {
       setLoading(false);
     }
@@ -31,9 +32,10 @@ const Documents = () => {
   const fetchCategories = async () => {
     try {
       const response = await axios.get('/api/documents/categories');
-      setCategories(response.data.categories);
+      setCategories(Array.isArray(response.data.categories) ? response.data.categories : []);
     } catch (error) {
       console.error('Error fetching categories:', error);
+      setCategories([]);
     }
   };
 
@@ -41,7 +43,7 @@ const Documents = () => {
     if (window.confirm('Are you sure you want to delete this document?')) {
       try {
         await axios.delete(`/api/documents/${documentId}`);
-        setDocuments(documents.filter(doc => doc._id !== documentId));
+        setDocuments(prevDocs => prevDocs.filter(doc => doc._id !== documentId));
         toast.success('Document deleted successfully');
       } catch (error) {
         toast.error('Error deleting document');
@@ -75,8 +77,9 @@ const Documents = () => {
   };
 
   const filteredDocuments = documents.filter(doc => {
-    const matchesSearch = doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         doc.category.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch =
+      doc.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      doc.category?.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = selectedCategory === 'all' || doc.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -90,7 +93,7 @@ const Documents = () => {
       transport: 'bg-purple-100 text-purple-800',
       other: 'bg-gray-100 text-gray-800'
     };
-    return colors[category.toLowerCase()] || colors.other;
+    return colors[category?.toLowerCase()] || colors.other;
   };
 
   if (loading) {
@@ -124,7 +127,7 @@ const Documents = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-          
+
           {/* Category Filter */}
           <select
             className="input-field"
@@ -146,13 +149,12 @@ const Documents = () => {
           <FileText className="h-16 w-16 text-gray-400 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900 mb-2">No documents found</h2>
           <p className="text-gray-600 mb-6">
-            {searchTerm || selectedCategory !== 'all' 
+            {searchTerm || selectedCategory !== 'all'
               ? 'Try adjusting your search or filter criteria'
-              : 'Start by uploading your first document'
-            }
+              : 'Start by uploading your first document'}
           </p>
           <button
-            onClick={() => window.location.href = '/upload'}
+            onClick={() => (window.location.href = '/upload')}
             className="btn-primary"
           >
             Upload Document
@@ -161,24 +163,35 @@ const Documents = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredDocuments.map((document) => (
-            <div key={document._id} className="card p-6 hover:shadow-xl transition-all duration-200">
+            <div
+              key={document._id}
+              className="card p-6 hover:shadow-xl transition-all duration-200"
+            >
               <div className="flex items-start justify-between mb-4">
                 <div className="p-3 bg-primary-100 rounded-lg">
                   <FileText className="h-6 w-6 text-primary-600" />
                 </div>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(document.category)}`}>
+                <span
+                  className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(
+                    document.category
+                  )}`}
+                >
                   {document.category}
                 </span>
               </div>
-              
-              <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">{document.title}</h3>
-              <p className="text-sm text-gray-600 mb-4 line-clamp-2">{document.description}</p>
-              
+
+              <h3 className="font-semibold text-gray-900 mb-2 line-clamp-2">
+                {document.title}
+              </h3>
+              <p className="text-sm text-gray-600 mb-4 line-clamp-2">
+                {document.description}
+              </p>
+
               <div className="text-xs text-gray-500 mb-4">
                 <p>Uploaded: {new Date(document.createdAt).toLocaleDateString()}</p>
                 <p>Size: {(document.size / 1024 / 1024).toFixed(2)} MB</p>
               </div>
-              
+
               <div className="flex items-center space-x-2">
                 <button
                   onClick={() => handleDownload(document._id, document.filename)}
@@ -187,15 +200,15 @@ const Documents = () => {
                   <Download className="h-4 w-4" />
                   <span>Download</span>
                 </button>
-                
-                <button 
+
+                <button
                   onClick={() => handleShare(document)}
                   className="p-2 text-secondary-600 hover:bg-secondary-50 rounded-lg transition-colors"
                 >
                   <Share2 className="h-4 w-4" />
                 </button>
-                
-                <button 
+
+                <button
                   onClick={() => handleDelete(document._id)}
                   className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                 >
