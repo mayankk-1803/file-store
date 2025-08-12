@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import Document from '../models/Document.js';
 import cloudinary from '../config/cloudinary.js';
 import streamifier from 'streamifier';
-import SharedDocument from '../models/SharedDocument.js';
+import SharedDocument from '../models/Share.js';
 
 // Helper: Upload to Cloudinary from buffer
 const uploadToCloudinary = (fileBuffer, folder) => {
