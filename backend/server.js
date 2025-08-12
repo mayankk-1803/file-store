@@ -46,6 +46,10 @@ async function startServer() {
   app.use('/api/auth', authRoutes);
   app.use('/api/documents', documentRoutes);
 
+  // Handle favicon requests (prevents 500 error in browser)
+  app.get('/favicon.ico', (req, res) => res.status(204).end());
+
+
   // Health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'OK', timestamp: new Date().toISOString() });
