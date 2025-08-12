@@ -1,303 +1,195 @@
-import fs from 'fs';
-import path from 'path';
 import Document from '../models/Document.js';
+import cloudinary from '../config/cloudinary.js';
+import streamifier from 'streamifier';
 import SharedDocument from '../models/SharedDocument.js';
-import mongoose from 'mongoose';
 
-// Ensure uploads directory exists
-const uploadDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.log(`✅ Created uploads folder at: ${uploadDir}`);
-}
+// Helper: Upload to Cloudinary from buffer
+const uploadToCloudinary = (fileBuffer, folder) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      { folder },
+      (error, result) => {
+        if (result) resolve(result);
+        else reject(error);
+      }
+    );
+    streamifier.createReadStream(fileBuffer).pipe(uploadStream);
+  });
+};
 
-/**
- * Upload document
- */
+// Upload Document
 export const uploadDocument = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded' });
-    }
+    if (!req.file) return res.status(400).json({ message: 'File is required' });
 
-    const newDoc = new Document({
+    const result = await uploadToCloudinary(req.file.buffer, 'documents');
+
+    const document = new Document({
       title: req.body.title || req.file.originalname,
-      description: req.body.description || '',
+      description: req.body.description,
       category: req.body.category,
-      filename: req.file.filename,
-      filePath: req.file.path,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       size: req.file.size,
-      owner: req.user.userId, // ✅ Consistent owner field
+      owner: req.user.id,
+      tags: req.body.tags ? req.body.tags.split(',').map(t => t.trim()) : [],
       metadata: {
         uploadIP: req.ip,
-        userAgent: req.get('User-Agent')
-      }
+        userAgent: req.headers['user-agent']
+      },
+      cloudinaryUrl: result.secure_url,
+      cloudinaryPublicId: result.public_id
     });
 
-    await newDoc.save();
-    res.status(201).json({ message: 'File uploaded successfully', document: newDoc });
+    await document.save();
+    res.status(201).json(document);
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Error uploading document' });
   }
 };
 
-/**
- * Get all documents for the logged-in user
- */
+// Get all documents for user
 export const getDocuments = async (req, res) => {
   try {
-    const documents = await Document.find({ owner: req.user.userId }).sort({ createdAt: -1 });
+    const documents = await Document.find({ owner: req.user.id }).sort({ createdAt: -1 });
     res.json(documents);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error fetching documents' });
   }
 };
 
-/**
- * Get single document
- */
+// Get single document
 export const getDocument = async (req, res) => {
   try {
-    const document = await Document.findOne({
-      _id: req.params.id,
-      owner: req.user.userId
-    });
-
-    if (!document) {
-      return res.status(404).json({ message: 'Document not found' });
-    }
-
+    const document = await Document.findOne({ _id: req.params.id, owner: req.user.id });
+    if (!document) return res.status(404).json({ message: 'Document not found' });
     res.json(document);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error fetching document' });
   }
 };
 
-/**
- * Download document
- */
+// Download document
 export const downloadDocument = async (req, res) => {
   try {
-    const document = await Document.findOne({
-      _id: req.params.id,
-      owner: req.user.userId
-    });
-
-    if (!document) {
-      return res.status(404).json({ message: 'Document not found' });
-    }
-
-    const filePath = document.filePath;
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: 'File not found on server' });
-    }
-
-    res.download(filePath, document.originalName);
+    const document = await Document.findOne({ _id: req.params.id, owner: req.user.id });
+    if (!document) return res.status(404).json({ message: 'Document not found' });
+    res.redirect(document.cloudinaryUrl); // Let Cloudinary serve the file
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error downloading document' });
   }
 };
 
-/**
- * Update document
- */
+// Update document metadata
 export const updateDocument = async (req, res) => {
   try {
-    const updated = await Document.findOneAndUpdate(
-      { _id: req.params.id, owner: req.user.userId },
+    const document = await Document.findOneAndUpdate(
+      { _id: req.params.id, owner: req.user.id },
       { $set: req.body },
       { new: true }
     );
-
-    if (!updated) {
-      return res.status(404).json({ message: 'Document not found' });
-    }
-
-    res.json({ message: 'Document updated successfully', document: updated });
+    if (!document) return res.status(404).json({ message: 'Document not found' });
+    res.json(document);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error updating document' });
   }
 };
 
-/**
- * Delete document
- */
+// Delete document
 export const deleteDocument = async (req, res) => {
   try {
-    const document = await Document.findOneAndDelete({
-      _id: req.params.id,
-      owner: req.user.userId
-    });
+    const document = await Document.findOneAndDelete({ _id: req.params.id, owner: req.user.id });
+    if (!document) return res.status(404).json({ message: 'Document not found' });
 
-    if (!document) {
-      return res.status(404).json({ message: 'Document not found' });
-    }
-
-    // Delete file from disk
-    if (document.filePath && fs.existsSync(document.filePath)) {
-      fs.unlinkSync(document.filePath);
-    }
+    // Remove from Cloudinary
+    await cloudinary.uploader.destroy(document.cloudinaryPublicId, { resource_type: 'raw' });
 
     res.json({ message: 'Document deleted successfully' });
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error deleting document' });
   }
 };
 
-/**
- * Dashboard stats
- */
+// Dashboard stats
 export const getDashboardStats = async (req, res) => {
   try {
-    const count = await Document.countDocuments({ owner: req.user.userId });
-    res.json({ totalDocuments: count });
+    const totalDocs = await Document.countDocuments({ owner: req.user.id });
+    res.json({ totalDocs });
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error fetching stats' });
   }
 };
 
-/**
- * Categories
- */
+// Get categories
 export const getCategories = async (req, res) => {
   try {
-    const categories = await Document.distinct('category', { owner: req.user.userId });
+    const categories = await Document.distinct('category', { owner: req.user.id });
     res.json(categories);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error fetching categories' });
   }
 };
 
-/**
- * Share document
- */
+// Share document
 export const shareDocument = async (req, res) => {
   try {
     const { documentId, email, permissions, expiresIn } = req.body;
-
-    const document = await Document.findOne({
-      _id: documentId,
-      owner: req.user.userId
-    });
-
-    if (!document) {
-      return res.status(404).json({ message: 'Document not found' });
-    }
-
-    const expiresAt = expiresIn
-      ? new Date(Date.now() + expiresIn * 24 * 60 * 60 * 1000)
-      : null;
+    const document = await Document.findOne({ _id: documentId, owner: req.user.id });
+    if (!document) return res.status(404).json({ message: 'Document not found' });
 
     const sharedDoc = new SharedDocument({
       document: document._id,
-      sharedWithEmail: email,
+      email,
       permissions,
-      expiresAt,
-      isActive: true
+      expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 24 * 60 * 60 * 1000) : null
     });
 
     await sharedDoc.save();
-    res.status(201).json({ message: 'Document shared successfully', shareToken: sharedDoc._id });
+    res.status(201).json(sharedDoc);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error sharing document' });
   }
 };
 
-/**
- * Get shared documents for logged-in user
- */
+// Get shared documents
 export const getSharedDocuments = async (req, res) => {
   try {
-    const sharedDocs = await SharedDocument.find({
-      sharedWithEmail: req.user.email,
-      isActive: true,
-      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
-    }).populate('document');
-
+    const sharedDocs = await SharedDocument.find({ email: req.user.email }).populate('document');
     res.json(sharedDocs);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error fetching shared documents' });
   }
 };
 
-/**
- * Revoke share
- */
+// Revoke share
 export const revokeShare = async (req, res) => {
   try {
-    const updated = await SharedDocument.findByIdAndUpdate(
-      req.params.shareId,
-      { isActive: false },
-      { new: true }
-    );
-
-    if (!updated) {
-      return res.status(404).json({ message: 'Share not found' });
-    }
-
+    await SharedDocument.findByIdAndDelete(req.params.shareId);
     res.json({ message: 'Share revoked successfully' });
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error revoking share' });
   }
 };
 
-/**
- * Download shared document
- */
+// Download shared document
 export const downloadSharedDocument = async (req, res) => {
   try {
-    const sharedDoc = await SharedDocument.findOne({
-      _id: req.params.shareToken,
-      isActive: true,
-      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
-    }).populate('document');
-
-    if (!sharedDoc) {
-      return res.status(404).json({ message: 'Shared document not found or expired' });
-    }
-
-    const filePath = sharedDoc.document.filePath;
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: 'File not found on server' });
-    }
-
-    res.download(filePath, sharedDoc.document.originalName);
+    const sharedDoc = await SharedDocument.findOne({ shareToken: req.params.shareToken }).populate('document');
+    if (!sharedDoc) return res.status(404).json({ message: 'Shared document not found' });
+    res.redirect(sharedDoc.document.cloudinaryUrl);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error downloading shared document' });
   }
 };
 
-/**
- * View shared document inline
- */
+// View shared document inline
 export const viewSharedDocument = async (req, res) => {
   try {
-    const sharedDoc = await SharedDocument.findOne({
-      _id: req.params.shareToken,
-      isActive: true,
-      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }]
-    }).populate('document');
-
-    if (!sharedDoc) {
-      return res.status(404).json({ message: 'Shared document not found or expired' });
-    }
-
-    const filePath = sharedDoc.document.filePath;
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ message: 'File not found on server' });
-    }
-
-    res.set({
-      'Content-Type': sharedDoc.document.mimeType,
-      'Content-Disposition': `inline; filename="${sharedDoc.document.originalName}"`,
-      'Content-Length': sharedDoc.document.size
-    });
-
-    fs.createReadStream(filePath).pipe(res);
+    const sharedDoc = await SharedDocument.findOne({ shareToken: req.params.shareToken }).populate('document');
+    if (!sharedDoc) return res.status(404).json({ message: 'Shared document not found' });
+    res.redirect(sharedDoc.document.cloudinaryUrl);
   } catch (error) {
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: 'Error viewing shared document' });
   }
 };

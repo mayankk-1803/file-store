@@ -1,8 +1,5 @@
-// routes/documentRoutes.js
 import express from 'express';
 import multer from 'multer';
-import path from 'path';
-import fs from 'fs';
 import { body } from 'express-validator';
 import {
   uploadDocument,
@@ -21,26 +18,13 @@ import {
 } from '../controllers/documentController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
-// Ensure uploads folder exists
-const uploadDir = path.join(process.cwd(), 'uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir);
-}
+const router = express.Router();
 
-// Multer disk storage config
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
+// Multer in-memory storage (for Cloudinary uploads)
+const storage = multer.memoryStorage();
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /pdf|doc|docx|jpg|jpeg|png|gif/;
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const extname = allowedTypes.test(file.originalname.toLowerCase());
   const mimetype = allowedTypes.test(file.mimetype);
   if (mimetype && extname) {
     cb(null, true);
@@ -48,10 +32,9 @@ const fileFilter = (req, file, cb) => {
     cb(new Error('Only PDF, Word documents, and images are allowed'));
   }
 };
-
 const upload = multer({
   storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter
 });
 
@@ -69,8 +52,7 @@ const shareValidation = [
   body('expiresIn').optional().isInt({ min: 1, max: 365 })
 ];
 
-// Routes
-const router = express.Router();
+// Auth middleware
 router.use(authenticateToken);
 
 router.post('/upload', upload.single('file'), documentValidation, uploadDocument);
