@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
+
 import authRoutes from './routes/auth.js';
 import documentRoutes from './routes/documents.js';
 import connectDB from './config/database.js';
@@ -66,4 +67,11 @@ if(process.env.NODE_ENV !== 'production') {
 }
 
 // Export for Vercel serverless function
-export default app;
+import { createServer } from 'http';
+
+const server = createServer(app);
+
+export default function handler(req, res) {
+  server.emit('request', req, res);
+}
+
