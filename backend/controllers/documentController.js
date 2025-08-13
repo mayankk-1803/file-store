@@ -23,14 +23,15 @@ const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 // ── Upload Document ──────────────────────────────────────────────
 export const uploadDocument = async (req, res) => {
   try {
-    // Basic checks
-    if (!req.file) return res.status(400).json({ message: 'File is required' });
-    if (!req.user?.id) return res.status(401).json({ message: 'User authentication failed' });
+    if (!req.file) {
+      return res.status(400).json({ message: 'File is required' });
+    }
+    if (!req.user?.userId) {
+      return res.status(401).json({ message: 'User authentication failed' });
+    }
 
-    // Upload to Cloudinary
     const result = await uploadToCloudinary(req.file.buffer, 'documents');
 
-    // Map to your schema fields
     const doc = await Document.create({
       title: req.body.title || req.file.originalname,
       description: req.body.description || '',
@@ -38,14 +39,11 @@ export const uploadDocument = async (req, res) => {
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
       size: req.file.size,
-      fileUrl: result.secure_url,         // ✅ schema field
-      cloudinaryId: result.public_id,     // ✅ schema field
-      owner: req.user.id,                 // ✅ schema field (ObjectId as string ok)
+      fileUrl: result.secure_url,
+      cloudinaryId: result.public_id,
+      owner: req.user.userId, // ✅ consistent
       tags: req.body.tags
-        ? String(req.body.tags)
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean)
+        ? String(req.body.tags).split(',').map(t => t.trim()).filter(Boolean)
         : [],
       metadata: {
         uploadIP: req.ip,
@@ -53,10 +51,10 @@ export const uploadDocument = async (req, res) => {
       },
     });
 
-    return res.status(201).json(doc);
+    res.status(201).json(doc);
   } catch (error) {
     console.error('Upload error:', error);
-    return res.status(500).json({ message: 'Error uploading document' });
+    res.status(500).json({ message: 'Error uploading document' });
   }
 };
 
