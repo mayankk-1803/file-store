@@ -11,7 +11,7 @@ const uploadToCloudinary = (fileBuffer, folder) =>
     if (!fileBuffer) return reject(new Error('No file buffer provided'));
 
     const uploadStream = cloudinary.uploader.upload_stream(
-      { folder, resource_type: 'raw' },
+      { folder, resource_type: 'raw' }, // raw for any file type
       (error, result) => (error ? reject(error) : resolve(result))
     );
 
@@ -23,24 +23,31 @@ const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 // ── Upload Document ──────────────────────────────────────────────
 export const uploadDocument = async (req, res) => {
   try {
+    console.log('Authenticated user:', req.user);
+    console.log('File received:', req.file);
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+      return res.status(400).json({ message: 'Validation failed', errors: errors.array() });
     }
 
     const file = req.file;
     if (!file) return res.status(400).json({ message: 'No file uploaded' });
 
-    // ✅ Upload to Cloudinary
-    const result = await uploadToCloudinary(file.buffer, 'documents');
+    // Upload file to Cloudinary
+    const cloudResult = await uploadToCloudinary(file.buffer, 'documents');
+    console.log('Cloudinary upload result:', cloudResult);
 
+    // Save document in MongoDB
     const doc = await Document.create({
       owner: req.user.userId,
       name: file.originalname,
-      fileUrl: result.secure_url,        // Cloudinary URL
-      cloudinaryId: result.public_id,    // Needed for deletion
+      fileUrl: cloudResult.secure_url,
+      cloudinaryId: cloudResult.public_id,
       mimeType: file.mimetype,
       size: file.size,
+      category: req.body.category || 'other',
+      description: req.body.description || '',
     });
 
     res.status(201).json({ message: 'Document uploaded successfully', document: doc });
@@ -49,7 +56,6 @@ export const uploadDocument = async (req, res) => {
     res.status(500).json({ message: 'Document upload failed', error: err.message });
   }
 };
-
 
 // ── Get all documents ────────────────────────────────────────────
 export const getDocuments = async (req, res) => {
@@ -77,7 +83,7 @@ export const getDocument = async (req, res) => {
   }
 };
 
-// ── Download document (redirect) ─────────────────────────────────
+// ── Download document ────────────────────────────────────────────
 export const downloadDocument = async (req, res) => {
   try {
     if (!isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid document ID' });
@@ -111,7 +117,7 @@ export const updateDocument = async (req, res) => {
   }
 };
 
-// ── Delete document (and Cloudinary asset) ───────────────────────
+// ── Delete document ──────────────────────────────────────────────
 export const deleteDocument = async (req, res) => {
   try {
     if (!isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid document ID' });
@@ -143,7 +149,7 @@ export const getDashboardStats = async (req, res) => {
   }
 };
 
-// ── Categories ───────────────────────────────────────────────────
+// ── Get distinct categories ──────────────────────────────────────
 export const getCategories = async (req, res) => {
   try {
     const categories = await Document.distinct('category', { owner: req.user.userId });
@@ -179,7 +185,7 @@ export const shareDocument = async (req, res) => {
   }
 };
 
-// ── Get shared documents for logged-in user ─────────────────────
+// ── Get shared documents ─────────────────────────────────────────
 export const getSharedDocuments = async (req, res) => {
   try {
     const shared = await SharedDocument.find({ email: req.user.email }).populate('document');
