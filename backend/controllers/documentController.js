@@ -59,61 +59,49 @@ const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 //   }
 // };
 
-// Upload Document (updated with better logging and error handling)
 export const uploadDocument = async (req, res) => {
   try {
-    // Check file exists
+    // Validation check
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    // Make sure a file was uploaded
     if (!req.file) {
-      return res.status(400).json({ message: 'File is required' });
+      return res.status(400).json({ message: 'No file uploaded' });
     }
 
-    // Check user exists
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({ message: 'User authentication failed' });
-    }
+    // Upload file to Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: 'documents',
+      resource_type: 'auto'
+    });
 
-    console.log(`Uploading file: ${req.file.originalname} (${req.file.size} bytes)`);
+    // Create new document record
+    const newDocument = new Document({
+      title: req.body.title || 'Untitled Document',
+      description: req.body.description || '',
+      cloudinaryId: result.public_id,      // REQUIRED
+      fileUrl: result.secure_url,          // REQUIRED
+      owner: req.user.id                   // From auth middleware (JWT)
+    });
 
-    let result;
-    try {
-      result = await uploadToCloudinary(req.file.buffer, 'documents');
-      console.log('Cloudinary upload result:', result);
-    } catch (cloudErr) {
-      console.error('Cloudinary upload failed:', cloudErr);
-      return res.status(500).json({ message: 'Cloudinary upload failed', error: cloudErr.message });
-    }
+    await newDocument.save();
 
-    // Save document in MongoDB
-    let document;
-    try {
-      document = await Document.create({
-        title: req.body.title || req.file.originalname,
-        description: req.body.description || '',
-        category: req.body.category || 'Uncategorized',
-        originalName: req.file.originalname,
-        mimeType: req.file.mimetype,
-        size: req.file.size,
-        owner: req.user.userId,
-        tags: req.body.tags
-          ? req.body.tags.split(',').map(t => t.trim()).filter(Boolean)
-          : [],
-        metadata: {
-          uploadIP: req.ip,
-          userAgent: req.headers['user-agent'] || ''
-        },
-        cloudinaryUrl: result.secure_url,
-        cloudinaryPublicId: result.public_id
-      });
-    } catch (dbErr) {
-      console.error('MongoDB save failed:', dbErr);
-      return res.status(500).json({ message: 'Database save failed', error: dbErr.message });
-    }
+    // Remove local file after upload
+    fs.unlinkSync(req.file.path);
 
-    return res.status(201).json(document);
-
+    res.status(201).json({
+      message: 'Document uploaded successfully',
+      document: newDocument
+    });
   } catch (error) {
-    console.error('Unexpected upload error:', error);
-    return res.status(500).json({ message: 'Unexpected server error', error: error.message });
+    console.error('Upload error:', error);
+    res.status(500).json({
+      message: 'Error uploading document',
+      error: error.message
+    });
   }
 };
 
