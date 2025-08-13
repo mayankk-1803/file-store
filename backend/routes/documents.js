@@ -20,7 +20,7 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Multer: in-memory storage for Cloudinary uploads
+//  Multer memory storage
 const storage = multer.memoryStorage();
 const fileFilter = (req, file, cb) => {
   const allowedTypes = /pdf|doc|docx|jpg|jpeg|png|gif/;
@@ -39,7 +39,7 @@ const upload = multer({
   fileFilter
 });
 
-// Common validation middleware to handle express-validator errors
+// Common validation handler
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -67,10 +67,13 @@ const shareValidation = [
   body('expiresIn').optional().isInt({ min: 1, max: 365 })
 ];
 
-// Require authentication for all document routes
-router.use(authenticateToken);
+//  Authentication for all routes, but skip OPTIONS
+router.use((req, res, next) => {
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  authenticateToken(req, res, next);
+});
 
-// Document routes
+//  Document routes
 router.post('/upload', upload.single('file'), documentValidation, handleValidationErrors, uploadDocument);
 router.get('/', getDocuments);
 router.get('/dashboard', getDashboardStats);
