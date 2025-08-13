@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Upload, File, X, Plus } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import api from '../api';
 
 const UploadDocument = () => {
   const [formData, setFormData] = useState({
@@ -81,10 +82,9 @@ const UploadDocument = () => {
         formDataToSend.append('description', formData.description);
         formDataToSend.append('category', formData.category === 'custom' ? formData.customCategory : formData.category);
 
-        return axios.post('/api/documents/upload', formDataToSend, {
+        return api.post('/api/documents/upload', formDataToSend, {
           headers: {
             'Content-Type': 'multipart/form-data',
-            'Authorization': `Bearer ${token}`
           },
           onUploadProgress: (progressEvent) => {
             const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
