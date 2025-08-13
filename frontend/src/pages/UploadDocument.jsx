@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Upload, File, X, Plus } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import api from '../api';
+
 
 const UploadDocument = () => {
   const [formData, setFormData] = useState({
@@ -65,7 +65,7 @@ const UploadDocument = () => {
 
   const handleSubmit = async (e) => {
   e.preventDefault();
-  
+
   if (files.length === 0) {
     toast.error('Please select at least one file');
     return;
@@ -74,6 +74,9 @@ const UploadDocument = () => {
   setUploading(true);
 
   try {
+    const token = localStorage.getItem('token');
+    if (!token) throw new Error('No access token found');
+
     const uploadPromises = files.map(async (fileObj) => {
       const formDataToSend = new FormData();
       formDataToSend.append('file', fileObj.file);
@@ -84,38 +87,47 @@ const UploadDocument = () => {
         formData.category === 'custom' ? formData.customCategory : formData.category
       );
 
-      // token is already handled by api interceptor
-      return api.post('/api/documents/upload', formDataToSend, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          // Optional: update progress UI
+      return axios.post(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/documents/upload`,
+        formDataToSend,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            'Authorization': `Bearer ${token}`, // ✅ Attach token here
+          },
+          onUploadProgress: (progressEvent) => {
+            const progress = Math.round(
+              (progressEvent.loaded * 100) / progressEvent.total
+            );
+            // optional: update progress bar
+          },
         }
-      });
+      );
     });
 
     await Promise.all(uploadPromises);
-    
+
     toast.success(`${files.length} document(s) uploaded successfully!`);
 
+    // Reset form
     setFormData({
       title: '',
       description: '',
       category: '',
-      customCategory: ''
+      customCategory: '',
     });
     setFiles([]);
 
-    setTimeout(() => {
-      window.location.href = '/documents';
-    }, 1500);
+    // Redirect
+    setTimeout(() => window.location.href = '/documents', 1500);
 
   } catch (error) {
-    toast.error(error.response?.data?.message || 'Upload failed');
+    toast.error(error.response?.data?.message || error.message || 'Upload failed');
   } finally {
     setUploading(false);
   }
 };
+
 
 
   return (
