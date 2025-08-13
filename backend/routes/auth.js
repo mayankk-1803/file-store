@@ -1,40 +1,30 @@
+// backend/routes/auth.js
 import express from 'express';
-import { body } from 'express-validator';
-import {
-  register,
-  verifyOTP,
-  login,
-  getProfile,
-  updateProfile
-} from '../controllers/authController.js';
-import { authenticateToken } from '../middleware/auth.js';
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
 
 const router = express.Router();
 
-// Validation rules
-const registerValidation = [
-  body('name').trim().isLength({ min: 2, max: 50 }).withMessage('Name must be between 2-50 characters'),
-  body('email').isEmail().withMessage('Valid email is required'),
-  body('phone').isMobilePhone('en-IN').withMessage('Valid Indian phone number is required'),
-  body('aadhaar').isLength({ min: 12, max: 12 }).isNumeric().withMessage('Valid 12-digit Aadhaar number is required'),
-  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
-];
+// Minimal login route: expects verified users
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    const user = await User.findOne({ email: (email || '').toLowerCase().trim() });
+    if (!user) return res.status(400).json({ message: 'Invalid credentials' });
 
-const loginValidation = [
-  body('email').isEmail().withMessage('Valid email is required'),
-  body('password').notEmpty().withMessage('Password is required')
-];
+    const ok = await user.comparePassword(password || '');
+    if (!ok) return res.status(400).json({ message: 'Invalid credentials' });
+    if (!user.isVerified) return res.status(403).json({ message: 'Account not verified' });
 
-const updateProfileValidation = [
-  body('name').optional().trim().isLength({ min: 2, max: 50 }),
-  body('phone').optional().isMobilePhone('en-IN')
-];
+    const token = jwt.sign({ userId: user._id.toString() }, process.env.JWT_SECRET || 'your-secret-key', {
+      expiresIn: '7d',
+    });
 
-// Routes
-router.post('/register', registerValidation, register);
-router.post('/verify-otp', verifyOTP);
-router.post('/login', loginValidation, login);
-router.get('/me', authenticateToken, getProfile);
-router.put('/profile', authenticateToken, updateProfileValidation, updateProfile);
+    res.json({ token, user: { id: user._id.toString(), email: user.email, name: user.name } });
+  } catch (e) {
+    console.error('Login error:', e);
+    res.status(500).json({ message: 'Login failed' });
+  }
+});
 
 export default router;

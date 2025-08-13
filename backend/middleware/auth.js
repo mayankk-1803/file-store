@@ -1,10 +1,11 @@
+// backend/middleware/auth.js
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
 export const authenticateToken = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.split(' ')[1];
+    const raw = req.headers.authorization || '';
+    const token = raw.startsWith('Bearer ') ? raw.slice(7) : null;
 
     if (!token) {
       return res.status(401).json({ message: 'Access token required' });
@@ -13,7 +14,7 @@ export const authenticateToken = async (req, res, next) => {
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    } catch (err) {
+    } catch {
       return res.status(401).json({ message: 'Invalid or expired token' });
     }
 
@@ -22,34 +23,11 @@ export const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ message: 'Invalid or expired token' });
     }
 
+    // normalize to req.user.id (string) + email
     req.user = { id: user._id.toString(), email: user.email };
-
     next();
-  } catch (error) {
-    console.error('Auth middleware error:', error);
-    return res.status(500).json({ message: 'Server error during authentication' });
-  }
-};
-
-export const optionalAuth = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-    const token = authHeader?.split(' ')[1];
-
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-        const user = await User.findById(decoded.userId).select('-password');
-        if (user && user.isVerified) {
-          req.user = { userId: user._id, email: user.email };
-        }
-      } catch {
-        // invalid token, ignore
-      }
-    }
-    next();
-  } catch (error) {
-    console.error('Optional auth error:', error);
-    next();
+  } catch (err) {
+    console.error('Auth middleware error:', err);
+    res.status(500).json({ message: 'Server error during authentication' });
   }
 };
