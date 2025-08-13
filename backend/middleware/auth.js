@@ -3,6 +3,7 @@ import User from '../models/User.js';
 
 export const authenticateToken = async (req, res, next) => {
   try {
+    console.log('Incoming headers:', req.headers);
     const raw = req.headers.authorization || '';
     const token = raw.startsWith('Bearer ') ? raw.slice(7) : null;
 
