@@ -31,20 +31,25 @@ export const uploadDocument = async (req, res) => {
     const file = req.file;
     if (!file) return res.status(400).json({ message: 'No file uploaded' });
 
+    // ✅ Upload to Cloudinary
+    const result = await uploadToCloudinary(file.buffer, 'documents');
+
     const doc = await Document.create({
-      owner: req.user.userId, // ✅ Consistent
+      owner: req.user.userId,
       name: file.originalname,
-      fileUrl: file.path || '',
+      fileUrl: result.secure_url,        // Cloudinary URL
+      cloudinaryId: result.public_id,    // Needed for deletion
       mimeType: file.mimetype,
-      size: file.size
+      size: file.size,
     });
 
-    res.status(201).json(doc);
+    res.status(201).json({ message: 'Document uploaded successfully', document: doc });
   } catch (err) {
     console.error('Upload error:', err);
-    res.status(500).json({ message: 'Document upload failed' });
+    res.status(500).json({ message: 'Document upload failed', error: err.message });
   }
 };
+
 
 // ── Get all documents ────────────────────────────────────────────
 export const getDocuments = async (req, res) => {
