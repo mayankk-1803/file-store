@@ -1,11 +1,11 @@
-// backend/controllers/documentController.js
 import mongoose from 'mongoose';
 import streamifier from 'streamifier';
 import cloudinary from '../config/cloudinary.js';
 import Document from '../models/Document.js';
 import SharedDocument from '../models/Share.js';
+import { validationResult } from 'express-validator';
 
-// Cloudinary upload from buffer (resource_type raw for any file)
+// Upload to Cloudinary from buffer
 const uploadToCloudinary = (fileBuffer, folder) =>
   new Promise((resolve, reject) => {
     if (!fileBuffer) return reject(new Error('No file buffer provided'));
@@ -23,45 +23,33 @@ const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 // ── Upload Document ──────────────────────────────────────────────
 export const uploadDocument = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'File is required' });
-    }
-    if (!req.user?.userId) {
-      return res.status(401).json({ message: 'User authentication failed' });
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
 
-    const result = await uploadToCloudinary(req.file.buffer, 'documents');
+    const file = req.file;
+    if (!file) return res.status(400).json({ message: 'No file uploaded' });
 
     const doc = await Document.create({
-      title: req.body.title || req.file.originalname,
-      description: req.body.description || '',
-      category: (req.body.category || 'other').toLowerCase(),
-      originalName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
-      fileUrl: result.secure_url,
-      cloudinaryId: result.public_id,
-      owner: req.user.userId, // ✅ consistent
-      tags: req.body.tags
-        ? String(req.body.tags).split(',').map(t => t.trim()).filter(Boolean)
-        : [],
-      metadata: {
-        uploadIP: req.ip,
-        userAgent: req.headers['user-agent'] || '',
-      },
+      owner: req.user.userId, // ✅ Consistent
+      name: file.originalname,
+      fileUrl: file.path || '',
+      mimeType: file.mimetype,
+      size: file.size
     });
 
     res.status(201).json(doc);
-  } catch (error) {
-    console.error('Upload error:', error);
-    res.status(500).json({ message: 'Error uploading document' });
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({ message: 'Document upload failed' });
   }
 };
 
 // ── Get all documents ────────────────────────────────────────────
 export const getDocuments = async (req, res) => {
   try {
-    const docs = await Document.find({ owner: req.user.id }).sort({ createdAt: -1 });
+    const docs = await Document.find({ owner: req.user.userId }).sort({ createdAt: -1 });
     res.json(docs);
   } catch (error) {
     console.error('Get documents error:', error);
@@ -74,7 +62,7 @@ export const getDocument = async (req, res) => {
   try {
     if (!isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid document ID' });
 
-    const doc = await Document.findOne({ _id: req.params.id, owner: req.user.id });
+    const doc = await Document.findOne({ _id: req.params.id, owner: req.user.userId });
     if (!doc) return res.status(404).json({ message: 'Document not found' });
 
     res.json(doc);
@@ -89,7 +77,7 @@ export const downloadDocument = async (req, res) => {
   try {
     if (!isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid document ID' });
 
-    const doc = await Document.findOne({ _id: req.params.id, owner: req.user.id });
+    const doc = await Document.findOne({ _id: req.params.id, owner: req.user.userId });
     if (!doc) return res.status(404).json({ message: 'Document not found' });
 
     res.redirect(doc.fileUrl);
@@ -105,7 +93,7 @@ export const updateDocument = async (req, res) => {
     if (!isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid document ID' });
 
     const updated = await Document.findOneAndUpdate(
-      { _id: req.params.id, owner: req.user.id },
+      { _id: req.params.id, owner: req.user.userId },
       { $set: req.body },
       { new: true }
     );
@@ -123,7 +111,7 @@ export const deleteDocument = async (req, res) => {
   try {
     if (!isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid document ID' });
 
-    const doc = await Document.findOneAndDelete({ _id: req.params.id, owner: req.user.id });
+    const doc = await Document.findOneAndDelete({ _id: req.params.id, owner: req.user.userId });
     if (!doc) return res.status(404).json({ message: 'Document not found' });
 
     try {
@@ -142,7 +130,7 @@ export const deleteDocument = async (req, res) => {
 // ── Dashboard stats ──────────────────────────────────────────────
 export const getDashboardStats = async (req, res) => {
   try {
-    const totalDocs = await Document.countDocuments({ owner: req.user.id });
+    const totalDocs = await Document.countDocuments({ owner: req.user.userId });
     res.json({ totalDocs });
   } catch (error) {
     console.error('Dashboard stats error:', error);
@@ -153,7 +141,7 @@ export const getDashboardStats = async (req, res) => {
 // ── Categories ───────────────────────────────────────────────────
 export const getCategories = async (req, res) => {
   try {
-    const categories = await Document.distinct('category', { owner: req.user.id });
+    const categories = await Document.distinct('category', { owner: req.user.userId });
     res.json(categories);
   } catch (error) {
     console.error('Get categories error:', error);
@@ -168,7 +156,7 @@ export const shareDocument = async (req, res) => {
 
     if (!isValidObjectId(documentId)) return res.status(400).json({ message: 'Invalid document ID' });
 
-    const doc = await Document.findOne({ _id: documentId, owner: req.user.id });
+    const doc = await Document.findOne({ _id: documentId, owner: req.user.userId });
     if (!doc) return res.status(404).json({ message: 'Document not found' });
 
     const sharedDoc = await SharedDocument.create({

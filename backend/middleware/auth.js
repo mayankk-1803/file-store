@@ -1,4 +1,3 @@
-// backend/middleware/auth.js
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 
@@ -14,7 +13,7 @@ export const authenticateToken = async (req, res, next) => {
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    } catch (err) {
+    } catch {
       return res.status(401).json({ message: 'Invalid or expired token' });
     }
 
@@ -23,8 +22,12 @@ export const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ message: 'Invalid or expired token' });
     }
 
-    // Use consistent field name across backend
-    req.user = { userId: user._id.toString(), email: user.email };
+    // ✅ Always set userId (string) for controllers
+    req.user = {
+      userId: user._id.toString(),
+      email: user.email
+    };
+
     next();
   } catch (err) {
     console.error('Auth middleware error:', err);
