@@ -73,6 +73,7 @@ const UploadDocument = () => {
     setUploading(true);
 
     try {
+      const token = localStorage.getItem('token');
       const uploadPromises = files.map(async (fileObj) => {
         const formDataToSend = new FormData();
         formDataToSend.append('file', fileObj.file);
@@ -82,7 +83,8 @@ const UploadDocument = () => {
 
         return axios.post('/api/documents/upload', formDataToSend, {
           headers: {
-            'Content-Type': 'multipart/form-data'
+            'Content-Type': 'multipart/form-data',
+            'Authorization': `Bearer ${token}`
           },
           onUploadProgress: (progressEvent) => {
             const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
