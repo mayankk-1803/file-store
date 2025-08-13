@@ -64,59 +64,59 @@ const UploadDocument = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
+  
+  if (files.length === 0) {
+    toast.error('Please select at least one file');
+    return;
+  }
+
+  setUploading(true);
+
+  try {
+    const uploadPromises = files.map(async (fileObj) => {
+      const formDataToSend = new FormData();
+      formDataToSend.append('file', fileObj.file);
+      formDataToSend.append('title', formData.title || fileObj.name);
+      formDataToSend.append('description', formData.description);
+      formDataToSend.append(
+        'category',
+        formData.category === 'custom' ? formData.customCategory : formData.category
+      );
+
+      // token is already handled by api interceptor
+      return api.post('/api/documents/upload', formDataToSend, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          // Optional: update progress UI
+        }
+      });
+    });
+
+    await Promise.all(uploadPromises);
     
-    if (files.length === 0) {
-      toast.error('Please select at least one file');
-      return;
-    }
+    toast.success(`${files.length} document(s) uploaded successfully!`);
 
-    setUploading(true);
+    setFormData({
+      title: '',
+      description: '',
+      category: '',
+      customCategory: ''
+    });
+    setFiles([]);
 
-    try {
-      const token = localStorage.getItem('token');
-      const uploadPromises = files.map(async (fileObj) => {
-        const formDataToSend = new FormData();
-        formDataToSend.append('file', fileObj.file);
-        formDataToSend.append('title', formData.title || fileObj.name);
-        formDataToSend.append('description', formData.description);
-        formDataToSend.append('category', formData.category === 'custom' ? formData.customCategory : formData.category);
+    setTimeout(() => {
+      window.location.href = '/documents';
+    }, 1500);
 
-        return api.post('/api/documents/upload', formDataToSend, {
-          headers: {
-            'Content-Type': 'multipart/form-data',
-          },
-          onUploadProgress: (progressEvent) => {
-            const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            // You can update progress here if needed
-          }
-        });
-      });
+  } catch (error) {
+    toast.error(error.response?.data?.message || 'Upload failed');
+  } finally {
+    setUploading(false);
+  }
+};
 
-      await Promise.all(uploadPromises);
-      
-      toast.success(`${files.length} document(s) uploaded successfully!`);
-      
-      // Reset form
-      setFormData({
-        title: '',
-        description: '',
-        category: '',
-        customCategory: ''
-      });
-      setFiles([]);
-      
-      // Redirect to documents page
-      setTimeout(() => {
-        window.location.href = '/documents';
-      }, 1500);
-      
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Upload failed');
-    } finally {
-      setUploading(false);
-    }
-  };
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
