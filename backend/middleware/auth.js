@@ -14,7 +14,7 @@ export const authenticateToken = async (req, res, next) => {
     let decoded;
     try {
       decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
-    } catch {
+    } catch (err) {
       return res.status(401).json({ message: 'Invalid or expired token' });
     }
 
@@ -23,8 +23,8 @@ export const authenticateToken = async (req, res, next) => {
       return res.status(401).json({ message: 'Invalid or expired token' });
     }
 
-    // normalize to req.user.id (string) + email
-    req.user = { id: user._id.toString(), email: user.email };
+    // Use consistent field name across backend
+    req.user = { userId: user._id.toString(), email: user.email };
     next();
   } catch (err) {
     console.error('Auth middleware error:', err);
