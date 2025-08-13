@@ -25,39 +25,98 @@ const uploadToCloudinary = (fileBuffer, folder) => {
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 // Upload Document
+// export const uploadDocument = async (req, res) => {
+//   try {
+//     if (!req.file) {
+//       return res.status(400).json({ message: 'File is required' });
+//     }
+
+//     const result = await uploadToCloudinary(req.file.buffer, 'documents');
+
+//     const document = await Document.create({
+//       title: req.body.title || req.file.originalname,
+//       description: req.body.description || '',
+//       category: req.body.category || 'Uncategorized',
+//       originalName: req.file.originalname,
+//       mimeType: req.file.mimetype,
+//       size: req.file.size,
+//       owner: req.user.id,
+//       tags: req.body.tags
+//         ? req.body.tags.split(',').map(t => t.trim()).filter(Boolean)
+//         : [],
+//       metadata: {
+//         uploadIP: req.ip,
+//         userAgent: req.headers['user-agent'] || ''
+//       },
+//       cloudinaryUrl: result.secure_url,
+//       cloudinaryPublicId: result.public_id
+//     });
+
+//     return res.status(201).json(document);
+//   } catch (error) {
+//     console.error('Upload error:', error);
+//     return res.status(500).json({ message: 'Error uploading document' });
+//   }
+// };
+
+// Upload Document (updated with better logging and error handling)
 export const uploadDocument = async (req, res) => {
   try {
+    // Check file exists
     if (!req.file) {
       return res.status(400).json({ message: 'File is required' });
     }
 
-    const result = await uploadToCloudinary(req.file.buffer, 'documents');
+    // Check user exists
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ message: 'User authentication failed' });
+    }
 
-    const document = await Document.create({
-      title: req.body.title || req.file.originalname,
-      description: req.body.description || '',
-      category: req.body.category || 'Uncategorized',
-      originalName: req.file.originalname,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
-      owner: req.user.id,
-      tags: req.body.tags
-        ? req.body.tags.split(',').map(t => t.trim()).filter(Boolean)
-        : [],
-      metadata: {
-        uploadIP: req.ip,
-        userAgent: req.headers['user-agent'] || ''
-      },
-      cloudinaryUrl: result.secure_url,
-      cloudinaryPublicId: result.public_id
-    });
+    console.log(`Uploading file: ${req.file.originalname} (${req.file.size} bytes)`);
+
+    let result;
+    try {
+      result = await uploadToCloudinary(req.file.buffer, 'documents');
+      console.log('Cloudinary upload result:', result);
+    } catch (cloudErr) {
+      console.error('Cloudinary upload failed:', cloudErr);
+      return res.status(500).json({ message: 'Cloudinary upload failed', error: cloudErr.message });
+    }
+
+    // Save document in MongoDB
+    let document;
+    try {
+      document = await Document.create({
+        title: req.body.title || req.file.originalname,
+        description: req.body.description || '',
+        category: req.body.category || 'Uncategorized',
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        owner: req.user.id,
+        tags: req.body.tags
+          ? req.body.tags.split(',').map(t => t.trim()).filter(Boolean)
+          : [],
+        metadata: {
+          uploadIP: req.ip,
+          userAgent: req.headers['user-agent'] || ''
+        },
+        cloudinaryUrl: result.secure_url,
+        cloudinaryPublicId: result.public_id
+      });
+    } catch (dbErr) {
+      console.error('MongoDB save failed:', dbErr);
+      return res.status(500).json({ message: 'Database save failed', error: dbErr.message });
+    }
 
     return res.status(201).json(document);
+
   } catch (error) {
-    console.error('Upload error:', error);
-    return res.status(500).json({ message: 'Error uploading document' });
+    console.error('Unexpected upload error:', error);
+    return res.status(500).json({ message: 'Unexpected server error', error: error.message });
   }
 };
+
 
 // Get all documents for user
 export const getDocuments = async (req, res) => {
